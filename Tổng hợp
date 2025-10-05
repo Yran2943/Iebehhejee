@@ -1,0 +1,693 @@
+-- Khai báo dữ liệu
+shared.LoaderTitle = "XHub Loader"
+shared.LoaderKeyFrames = {
+    [1] = {1, 10},
+    [2] = {2, 30},
+    [3] = {3, 60},
+    [4] = {2, 100}
+}
+
+local Config = {
+    LoaderData = {
+        Name = shared.LoaderTitle or "XHub Loader",
+        Colors = {
+            Main = Color3.fromRGB(255, 255, 255),
+            Topic = Color3.fromRGB(200, 200, 200),
+            Title = Color3.fromRGB(255, 255, 255),
+            LoaderBackground = Color3.fromRGB(40, 40, 40),
+            LoaderSplash = Color3.fromRGB(173, 216, 230)
+        }
+    },
+    Keyframes = shared.LoaderKeyFrames
+}
+
+local LoadingMessages = {
+    [1] = "Starting XHub...",
+    [2] = "Loading scripts...",
+    [3] = "Preparing UI...",
+    [4] = "Ready!"
+}
+
+-- Hàm hỗ trợ
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
+local VirtualUser = game:GetService("VirtualUser")
+local LocalPlayer = Players.LocalPlayer
+local Workspace = game:GetService("Workspace")
+
+local function TweenObject(obj, time, properties)
+    if not obj then return end
+    local tween = TweenService:Create(obj, TweenInfo.new(time, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut), properties)
+    tween:Play()
+    return tween
+end
+
+local function CreateObject(class, properties)
+    local obj = Instance.new(class)
+    local parent
+    for key, value in pairs(properties or {}) do
+        if key ~= "Parent" then
+            obj[key] = value
+        else
+            parent = value
+        end
+    end
+    obj.Parent = parent
+    return obj
+end
+
+local function AddCorner(radius, parent)
+    if not parent then return end
+    local corner = CreateObject("UICorner", {
+        CornerRadius = UDim.new(0, radius),
+        Parent = parent
+    })
+    return corner
+end
+
+local function GetHumanoid()
+    local player = Players.LocalPlayer
+    local timeout = tick() + 10
+    if not player.Character or not player.Character:FindFirstChild("Humanoid") then
+        warn("Waiting for character to load...")
+        repeat
+            task.wait(0.1)
+            if tick() > timeout then
+                warn("Timeout waiting for character to load")
+                Fluent:Notify({
+                    Title = "Character Error",
+                    Content = "Failed to load character humanoid",
+                    Duration = 5
+                })
+                return nil
+            end
+        until player.Character and player.Character:FindFirstChild("Humanoid")
+    end
+    return player.Character:FindFirstChild("Humanoid")
+end
+
+-- Tạo giao diện loader
+local screenGui = CreateObject("ScreenGui", {
+    Name = "XHubCore",
+    Parent = game:GetService("CoreGui"),
+    IgnoreGuiInset = true
+})
+
+-- Tải Fluent UI
+local Fluent
+do
+    local success, result = pcall(function()
+        return loadstring(game:HttpGet("https://raw.githubusercontent.com/farehamhz/Fluent-UI/refs/heads/main/main.lua"))()
+    end)
+    if success then
+        Fluent = result
+    else
+        warn("Failed to load Fluent UI: " .. tostring(result))
+        Fluent:Notify({
+            Title = "Fluent UI Error",
+            Content = "Failed to load Fluent UI: " .. tostring(result),
+            Duration = 5
+        })
+        return
+    end
+end
+
+-- Tạo Window
+if Fluent then
+    local Window = Fluent:CreateWindow({
+        Title = "ko cần biết",
+        SubTitle = "",
+        TabWidth = 160,
+        Theme = "Dark",
+        Acrylic = true,
+        Size = UDim2.fromOffset(520, 320),
+        MinimizeKey = Enum.KeyCode.End
+    })
+
+    -- Tạo Floating Button
+    local floatGui = CreateObject("ScreenGui", {
+        Parent = game.CoreGui,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    })
+
+    local floatButton = CreateObject("ImageButton", {
+        Parent = floatGui,
+        BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+        BorderSizePixel = 0,
+        Position = UDim2.new(0.02, 0, 0.05, 0),
+        Size = UDim2.new(0, 40, 0, 40),
+        Draggable = true,
+        Image = "http://www.roblox.com/asset/?id=75774010417827"
+    })
+
+    AddCorner(8, floatButton)
+
+    local particles = CreateObject("ParticleEmitter", {
+        Parent = floatButton,
+        LightEmission = 1,
+        Size = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.1),
+            NumberSequenceKeypoint.new(1, 0)
+        }),
+        Lifetime = NumberRange.new(0.5, 1),
+        Rate = 0,
+        Speed = NumberRange.new(5, 10),
+        Color = ColorSequence.new(Color3.fromRGB(255, 85, 255), Color3.fromRGB(85, 255, 255))
+    })
+
+    floatButton.MouseButton1Down:Connect(function()
+        particles.Rate = 100
+        task.delay(1, function() particles.Rate = 0 end)
+
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.End, false, game)
+
+        local expand = TweenObject(floatButton, 0.2, {Size = UDim2.new(0, 60, 0, 60)})
+        if expand then
+            expand.Completed:Connect(function()
+                TweenObject(floatButton, 0.2, {Size = UDim2.new(0, 40, 0, 40)})
+            end)
+        end
+    end)
+
+    -- Xóa effects
+    local replicated = game:GetService("ReplicatedStorage")
+    if replicated:FindFirstChild("Effect") and replicated.Effect:FindFirstChild("Container") then
+        local container = replicated.Effect.Container
+        if container:FindFirstChild("Death") then container.Death:Destroy() end
+        if container:FindFirstChild("Respawn") then container.Respawn:Destroy() end
+    end
+
+    -- Tạo các Tab
+    local Tabs = {
+        Games  = Window:AddTab({ Title = "Games", lcon = "skullcap" }),
+        BloxFruit = Window:AddTab({ Title = "Blox Fruit", Icon = "apple" }),
+        DeadRails = Window:AddTab({ Title = "Dead Rails", Icon = "train" }),
+        JujutsuInfinity = Window:AddTab({ Title = "Jujutsu Infinity", Icon = "swords" }),
+        BlueLock = Window:AddTab({ Title = "Blue Lock", Icon = "award" }),
+        Door = Window:AddTab({ Title = "Door", Icon = "lock" }),
+        MM2 = Window:AddTab({ Title = "MM2", Icon = "skull" }),
+        Fish = Window:AddTab({ Title = "Fish", Icon = "waves" }),
+        BladeBall = Window:AddTab({ Title = "Blade Ball", Icon = "swords" }),
+        Evade = Window:AddTab({ Title = "Evade", Icon = "move" }),
+        FruitBattlegrounds = Window:AddTab({ Title = "Fruit Battlegrounds", Icon = "cherry" }),
+        AriseCrossover = Window:AddTab({ Title = "Arise Crossover", Icon = "rocket" }),
+        KingLegacy = Window:AddTab({ Title = "King Legacy", Icon = "crown" }),
+        PetGo = Window:AddTab({ Title = "Pet Go", Icon = "heart" }),
+        Arsenal = Window:AddTab({ Title = "Arsenal", Icon = "crosshair" }),
+        StrongestBattlegrounds = Window:AddTab({ Title = "The Strongest Battlegrounds", Icon = "swords" }),
+        ModGame = Window:AddTab({ Title = "Mod Game", Icon = "settings" })
+    }
+
+    -- Khai báo các mảng button
+    local ScriptButtons = {
+        Games  = {
+            {Title = "Ro Ghoul", Desc = "Ro Ghoul Script", Url = "https://raw.githubusercontent.com/PorryDepTrai/exploit/main/DashBoostSolora.lua"},
+            {Title = "Anime eternal", Desc = "anime", Url = "https://rawscripts.net/raw/KAGUNE-Anime-Eternal-AE-testing-version-v2-51430"},
+            {Title = "Parys", Desc = "Anime Rangers X", Url = "https://raw.githubusercontent.com/Winnable-Hub/Loader/refs/heads/main/Loader.Lua"},
+            {Title = "Parys", Desc = "Anime Rangers X NoKey", Url = "https://raw.githubusercontent.com/gumanba/Scripts/main/AnimeRangersX"},
+            {Title = "Parys", Desc = "steve op lv", Url = "https://raw.githubusercontent.com/viet452009/VietHub/main/Loading.Lua"},
+            {Title = "Parys", Desc = "steve op kiếm", Url = "https://raw.githubusercontent.com/acsu123/HOHO_H/main/Loading_UI"},
+            {Title = "Parys", Desc = "Dungeon Heroes", Url = "https://raw.githubusercontent.com/OhhMyGehlee/Roes/refs/heads/main/her"},
+            {Title = "Parys", Desc = "My restaurant", Url = "https://gist.githubusercontent.com/SpencerDevv/4127570215e413bf8ab4e074791bcf45 /raw/78b977974b36e2d5cde7a28dab7f9a464dd1a2c1/betaV5"},
+        },
+        BloxFruit = {
+            {Title = "Blue X Hub", Desc = "Blox Fruit Script", Url = "https://raw.githubusercontent.com/Dev-BlueX/BlueX-Hub/refs/heads/main/Main.lua"},
+            {Title = "Lion Hub Premium", Desc = "Blox Fruit Script", Url = "https://api.luarmor.net/files/v3/loaders/e0c7fcf6c077fc23475cf4ce4db58e42.lua"},
+            {Title = "W_azure", Desc = "Blox Fruit Script", Url = "https://api.luarmor.net/files/v3/loaders/3b2169cf53bc6104dabe8e19562e5cc2.lua"},
+            {Title = "Redz Hub", Desc = "Blox Fruit Script", Url = "https://pastefy.app/ACOX6D6h/raw"},
+            {Title = "Xero Hub", Desc = "Blox Fruit Script", Url = "https://raw.githubusercontent.com/Xero2409/XeroHub/refs/heads/main/main.lua"},
+            {Title = "HoHo Hub", Desc = "Blox Fruit Script", Url = "https://raw.githubusercontent.com/acsu123/HOHO_H/main/Loading_UI"},
+            {Title = "Ronyx Kaitun", Desc = "Blox Fruit Script", Url = "https://raw.githubusercontent.com/XSodiez/Kaitun/refs/heads/main/Kaitun"},
+            {Title = "Simple Kaitun", Desc = "Blox Fruit Script", Url = "https://raw.githubusercontent.com/XSodiez/Kaitunn/refs/heads/main/Kaitunn"},
+            {Title = "Min Hub", Desc = "Blox Fruit Script", Url = "https://raw.githubusercontent.com/LuaCrack/Min/refs/heads/main/MinAV"},
+            {Title = "Xeter Hub", Desc = "Blox Fruit Script", Url = "https://raw.githubusercontent.com/LuaCrack/Loader/main/Xeter.lua", Extra = function() getgenv().Version = "V1" end},
+            {Title = "Bắp Red Hub", Desc = "Blox Fruit Script", Url = "https://raw.githubusercontent.com/LuaCrack/BapRed/refs/heads/main/Bap(Beta)"},
+            {Title = "Cokka Hub", Desc = "Blox Fruit Script", Url = "https://raw.githubusercontent.com/UserDevEthical/Loadstring/main/CokkaHub.lua"},
+            {Title = "Quantum Onyx Hub", Desc = "Blox Fruit Script", Url = "https://raw.githubusercontent.com/Trustmenotcondom/QTONYX/refs/heads/main/QuantumOnyx.lua"},
+            {Title = "Maru Hub", Desc = "Blox Fruit Script", Url = "https://raw.githubusercontent.com/LuaCrack/KimP/refs/heads/main/MaruHub"},
+            {Title = "Rise Hub", Desc = "Blox Fruit Script", Url = "https://raw.githubusercontent.com/TrashLua/BloxFruits/main/FreeScripts.lua"}
+        },
+        DeadRails = {
+            {Title = "Aim Bot", Desc = "Dead Rails Script", Url = "https://rawscripts.net/raw/Dead-Rails-Alpha-Alpha-Aimbot-with-bind-30004"},
+            {Title = "Blue X Hub", Desc = "Dead Rails Script", Url = "https://raw.githubusercontent.com/Dev-BlueX/BlueX-Hub/refs/heads/main/Main.lua"},
+            {Title = "Speed Hub X", Desc = "Dead Rails Script", Url = "https://raw.githubusercontent.com/AhmadV99/Speed-Hub-X/main/Speed%20Hub%20X.lua"},
+            {Title = "Tp Kill NPC", Desc = "Dead Rails Script", Url = "https://raw.githubusercontent.com/huybuda1/AnhCon-PHD-Troll/refs/heads/main/AnhCon_TheNao_LaiManh.lua"},
+            {Title = "Super Hub", Desc = "Dead Rails Script", Url = "https://raw.githubusercontent.com/Super-XXX-Source/DEAD-RAILS-/refs/heads/main/DEAD%20RAzeta.org/DEAD%20RAILS%20SUPRA%20HUB"},
+            {Title = "Null Fire", Desc = "Dead Rails Script", Url = "https://raw.githubusercontent.com/InfernusScripts/Null-Fire/main/Loader"},
+            {Title = "Tp Công Trình", Desc = "Dead Rails Script", Url = "https://raw.githubusercontent.com/JonasThePogi/DeadRails/refs/heads/main/newloadstring"},
+            {Title = "Tp End", Desc = "Dead Rails Script", Url = "https://raw.githubusercontent.com/TwoGunVolley/Dedrail/refs/heads/main/Protected_8860927939362090.txt"}
+        },
+        JujutsuInfinity = {
+            {Title = "Solix Hub", Desc = "Jujutsu Infinity Script", Url = "https://raw.githubusercontent.com/debunked69/Solixreworkkeysystem/refs/heads/main/solix%20new%20keyui.lua"},
+            {Title = "Noble Hub", Desc = "Jujutsu Infinity Script", Url = "https://api.luarmor.net/files/v3/loaders/21cecfc256321e341fbe9a0a2df5a564.lua"},
+            {Title = "Toddy Hub", Desc = "Jujutsu Infinity Script", Url = "https://raw.githubusercontent.com/ToddyTheNoobDud/Meepstuff/refs/heads/main/NameThisCool.lua"}
+        },
+        BlueLock = {
+            {Title = "Ronix Hub", Desc = "Blue Lock Script", Url = "https://api.luarmor.net/files/v3/loaders/c84ecefd7fa63a35d454d3ecefe3ee7e.lua"},
+            {Title = "Blue Lock Hub", Desc = "Blue Lock Script", Url = "https://nicuse.xyz/MainHub.lua"},
+            {Title = "Blue Lock Hub", Desc = "Blue Lock Script", Url = "https://raw.githubusercontent.com/Bhusant/Pillar-chase/refs/heads/main/KeySystem"},
+            {Title = "Express Hub", Desc = "Blue Lock Script", Url = "https://api.luarmor.net/files/v3/loaders/d8824b23a4d9f2e0d62b4e69397d206b.lua"},
+            {Title = "NS Hub", Desc = "Blue Lock Script", Url = "https://raw.githubusercontent.com/OhhMyGehlee/fo/refs/heads/main/ot"},
+            {Title = "Arbix Hub", Desc = "Blue Lock Script", Url = "https://pastefy.app/lbLVUm8Z/raw"},
+            {Title = "Rinns Hub", Desc = "Blue Lock Script", Url = "https://raw.githubusercontent.com/SkibidiCen/MainMenu/main/Code"}
+        },
+        Door = {
+            {Title = "Speed Hub", Desc = "Door Script", Url = "https://raw.githubusercontent.com/AhmadV99/Speed-Hub-X/main/Speed%20Hub%20X.lua"},
+            {Title = "Door Hub", Desc = "Door Script", Url = "https://api.luarmor.net/files/v3/loaders/730854e5b6499ee91deb1080e8e12ae3.lua"},
+            {Title = "RoHub", Desc = "Door Script", Url = "https://raw.githubusercontent.com/ThatUnfunnyGuy/Main-Scripts/refs/heads/main/RoHub.lua"},
+            {Title = "KODBOL Hub", Desc = "Door Script", Url = "https://pastefy.app/awczkDwJ/raw"},
+            {Title = "FFJ Hub", Desc = "Door Script", Url = "https://raw.githubusercontent.com/FFJ1/Roblox-Exploits/main/scripts/Loader.lua"}
+        },
+        MM2 = {
+            {Title = "MM2 Hub", Desc = "MM2 Script", Url = "https://api.luarmor.net/files/v3/loaders/b8fb23f2e68ff3ca4ba3d59d15f32a05.lua"},
+            {Title = "Ronix Hub", Desc = "MM2 Script", Url = "https://api.luarmor.net/files/v3/loaders/2136f3786fd368193dd152c435d7ebfb.lua"},
+            {Title = "MM2 Hub", Desc = "MM2 Script", Url = "https://api.luarmor.net/files/v3/loaders/3c4ab478c7ace15ad975e2f7f0db853f.lua"},
+            {Title = "Kiciahook Hub", Desc = "MM2 Script", Url = "https://raw.githubusercontent.com/kiciahook/kiciahook/refs/heads/main/loader.lua"},
+            {Title = "Express Hub", Desc = "MM2 Script", Url = "https://api.luarmor.net/files/v3/loaders/d8824b23a4d9f2e0d62b4e69397d206b.lua"},
+            {Title = "Foggy Hub", Desc = "MM2 Script", Url = "https://raw.githubusercontent.com/FOGOTY/mm2-piano-reborn/refs/heads/main/scr"},
+            {Title = "Vertex Hub", Desc = "MM2 Script", Url = "https://raw.githubusercontent.com/vertex-peak/vertex/refs/heads/main/loadstring"}
+        },
+        Fish = {
+            {Title = "Ronix Hub", Desc = "Fish Script", Url = "https://api.luarmor.net/files/v3/loaders/ec32643721793227480ebe4d0980bda4.lua"},
+            {Title = "Speed Hub", Desc = "Fish Script", Url = "https://raw.githubusercontent.com/AhmadV99/Speed-Hub-X/main/Speed%20Hub%20X.lua"}
+        },
+        BladeBall = {
+            {Title = "Blade Ball Hub", Desc = "Blade Ball Script", Url = "https://api.luarmor.net/files/v3/loaders/f2b3338a19b7987d1dd989c53a1e3cb2.lua"},
+            {Title = "Ronix Hub", Desc = "Blade Ball Script", Url = "https://api.luarmor.net/files/v3/loaders/2136f3786fd368193dd152c435d7ebfb.lua"},
+            {Title = "SP Hub", Desc = "Blade Ball Script", Url = "https://raw.githubusercontent.com/as6cd0/SP_Hub/refs/heads/main/BladeBallEnglish"},
+            {Title = "Plutonium Hub", Desc = "Blade Ball Script", Url = "https://raw.githubusercontent.com/PawsThePaw/Plutonium.AA/main/Plutonium.Loader.lua"},
+            {Title = "Trevous Hub", Desc = "Blade Ball Script", Url = "https://raw.githubusercontent.com/ImNotRox1/Trevous-Hub/refs/heads/main/blade-ball.lua"},
+            {Title = "Zap Hub", Desc = "Blade Ball Script", Url = "https://zaphub.xyz/Exec"}
+        },
+        Evade = {
+            {Title = "Fly X V1", Desc = "Evade Script", Url = "https://raw.githubusercontent.com/XSodiez-dev/Fly-X-V1/refs/heads/main/Fly%20X%20V1.lua"},
+            {Title = "Evade Hub", Desc = "Evade Script", Url = "https://raw.githubusercontent.com/debunked69/Solixreworkkeysystem/refs/heads/main/solix%20new%20keyui.lua"},
+            {Title = "Neuron Hub", Desc = "Evade Script", Url = "https://raw.githubusercontent.com/Yumiara/Python/main/Main.lua"},
+            {Title = "Tbao Hub V1", Desc = "Evade Script", Url = "https://raw.githubusercontent.com/tbao143/thaibao/main/TbaoHubEvade"},
+            {Title = "Evade Hub", Desc = "Evade Script", Url = "https://raw.githubusercontent.com/CF-Trail/random/main/.x.vr.e.hi/loader.lua"},
+            {Title = "Moon Hub", Desc = "Evade Script", Url = "https://raw.githubusercontent.com/V3rmz/LemonadeHub/main/Mobile"}
+        },
+        FruitBattlegrounds = {
+            {Title = "Switch Hub", Desc = "Fruit Battlegrounds Script", Url = "https://api.luarmor.net/files/v3/loaders/4ae71d76cbc995dd03fb9332e47e0fe8.lua"},
+            {Title = "Fruit Battlegrounds Hub", Desc = "Fruit Battlegrounds Script", Url = "https://raw.githubusercontent.com/JumbleBumble/Scripts/main/FruitBattlegrounds.lua"},
+            {Title = "Kater Hub", Desc = "Fruit Battlegrounds Script", Url = "https://raw.githubusercontent.com/KATERGaming/Roblox/main/KaterHub.Lua"},
+            {Title = "Star Hub", Desc = "Fruit Battlegrounds Script", Url = "https://raw.githubusercontent.com/WanHubMan/StarHub/main/StarHubPaid"},
+            {Title = "Fruit Battlegrounds Hub", Desc = "Fruit Battlegrounds Script", Url = "https://raw.githubusercontent.com/LOLking123456/battle551/main/fruit00"}
+        },
+        AriseCrossover = {
+            {Title = "Goomba Hub", Desc = "Arise Crossover Script", Url = "https://raw.githubusercontent.com/JustLevel/goombahub/main/AriseCrossover.lua"}
+        },
+        KingLegacy = {
+            {Title = "King Legacy Hub", Desc = "King Legacy Script", Url = "https://raw.githubusercontent.com/rndmq/Serverlist/refs/heads/main/Loader"},
+            {Title = "BT Hub", Desc = "King Legacy Script", Url = "https://lua-library.btteam.net/script-auth.txt"},
+            {Title = "Neutron Hub", Desc = "King Legacy Script", Url = "https://raw.githubusercontent.com/PawsThePaw/Neutron.lua/main/MainNeutron.lua"},
+            {Title = "Zee Hub", Desc = "King Legacy Script", Url = "https://zuwz.me/Ls-Zee-Hub-KL"},
+            {Title = "Hyper Hub", Desc = "King Legacy Script", Url = "https://raw.githubusercontent.com/DookDekDEE/Hyper/main/script.lua"},
+            {Title = "King Legacy Hub", Desc = "King Legacy Script", Url = "https://cracklua.github.io/cracks/arc"},
+            {Title = "Noob Hub", Desc = "King Legacy Script", Url = "https://raw.githubusercontent.com/SHAREHACK/script/main/kl"},
+            {Title = "HULK Hub", Desc = "King Legacy Script", Url = "https://raw.githubusercontent.com/HULKUexe/mobileX/main/FreeScript.lua"}
+        },
+        PetGo = {
+            {Title = "Speed Hub", Desc = "Pet Go Script", Url = "https://raw.githubusercontent.com/AhmadV99/Speed-Hub-X/main/Speed%20Hub%20X.lua"},
+            {Title = "Rinns Hub", Desc = "Pet Go Script", Url = "https://raw.githubusercontent.com/SkibidiCen/MainMenu/main/Code"}
+        },
+        Arsenal = {
+            {Title = "Ronix Hub", Desc = "Arsenal Script", Url = "https://api.luarmor.net/files/v3/loaders/2136f3786fd368193dd152c435d7ebfb.lua"},
+            {Title = "Arsenal Hub", Desc = "Arsenal Script", Url = "https://api.luarmor.net/files/v3/loaders/bbfd6f90c7adab2c7ebc355c200ba7f1.lua"},
+            {Title = "Ar \"Arsenal Script", Url = "https://raw.githubusercontent.com/KasymM3/Green/refs/heads/main/Hub"},
+            {Title = "Aim Bot", Desc = "Arsenal Script", Url = "https://api.luarmor.net/files/v3/loaders/a8e26b3f8b332f5fb4a123885d1565c7.lua"},
+            {Title = "Plutonium Hub", Desc = "Arsenal Script", Url = "https://raw.githubusercontent.com/PawsThePaw/Plutonium.AA/main/Plutonium.Loader.lua"},
+            {Title = "Ronix Hub", Desc = "Arsenal Script", Url = "https://api.luarmor.net/files/v3/loaders/d8824b23a4d9f2e0d62b4e69397d206b.lua"},
+            {Title = "Ronix Hub", Desc = "Arsenal Script", Url = "https://api.luarmor.net/files/v3/loaders/93f86be991de0ff7d79e6328e4ceea40.lua"},
+            {Title = "Weed Hub", Desc = "Arsenal Script", Url = "https://raw.githubusercontent.com/ex55/weed-client/refs/heads/main/main.lua"}
+        },
+        StrongestBattlegrounds = {
+            {Title = "Speed Hub", Desc = "Strongest Battlegrounds Script", Url = "https://raw.githubusercontent.com/AhmadV99/Speed-Hub-X/main/Speed%20Hub%20X.lua"},
+            {Title = "The Strongest Battlegrounds Hub", Desc = "Strongest Battlegrounds Script", Url = "https://nicuse.xyz/MainHub.lua"},
+            {Title = "Animations Hub", Desc = "Strongest Battlegrounds Script", Url = "https://raw.githubusercontent.com/Mautiku/ehh/main/strong%20guest.lua.txt"},
+            {Title = "Phantasm Hub", Desc = "Strongest Battlegrounds Script", Url = "https://raw.githubusercontent.com/ATrainz/Phantasm/refs/heads/main/Games/TSB.lua"},
+            {Title = "Solara Hub", Desc = "Strongest Battlegrounds Script", Url = "https://raw.githubusercontent.com/OhhMyGehlee/TSBG/main/Solara"},
+            {Title = "Reaper Hub", Desc = "Strongest Battlegrounds Script", Url = "https://raw.githubusercontent.com/exterauser/exteraHub/main/Loader"}
+        },
+        ModGame = {
+            {Title = "Fly X V1", Desc = "Mod Game Script", Url = "https://raw.githubusercontent.com/XSodiez-dev/Fly-X-V1/refs/heads/main/Fly%20X%20V1.lua"},
+            {Title = "Infinite Yield", Desc = "Mod Game Script", Url = "https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"}
+        }
+    }
+
+    -- Hàm tạo Button
+    local function CreateButton(tab, btn)
+        if not tab or not btn then return end
+        tab:AddButton({
+            Title = btn.Title,
+            Description = btn.Desc,
+            Callback = function()
+                local success, err = pcall(function()
+                    if btn.Extra then btn.Extra() end
+                    local script = game:HttpGet(btn.Url, true)
+                    loadstring(script)()
+                    Fluent:Notify({
+                        Title = "Success",
+                        Content = "Loaded " .. btn.Title .. " successfully!",
+                        Duration = 3
+                    })
+                end)
+                if not success then
+                    warn("Error loading " .. btn.Title .. ": " .. tostring(err))
+                    Fluent:Notify({
+                        Title = "Error",
+                        Content = "Failed to load " .. btn.Title .. ": " .. tostring(err),
+                        Duration = 5
+                    })
+                end
+            end
+        })
+    end
+
+    -- Thêm Buttons vào Tabs
+    for tabKey, buttons in pairs(ScriptButtons) do
+        local tab = Tabs[tabKey]
+        if tab then
+            for _, btn in ipairs(buttons) do
+                CreateButton(tab, btn)
+            end
+        else
+            warn("Tab key " .. tabKey .. " not found")
+            Fluent:Notify({
+                Title = "Tab Error",
+                Content = "Tab key " .. tabKey .. " not found",
+                Duration = 5
+            })
+        end
+    end
+
+    -- Mod Game Features
+    local speedConnection
+    Tabs.ModGame:AddSlider("SpeedSlider", {
+        Title = "Walk Speed",
+        Description = "Điều chỉnh tốc độ di chuyển",
+        Default = 16,
+        Min = 16,
+        Max = 5000,
+        Rounding = 1,
+        Callback = function(value)
+            local success, err = pcall(function()
+                if speedConnection then speedConnection:Disconnect() end
+                
+                local function updateSpeed(char)
+                    local humanoid = char and char:FindFirstChild("Humanoid")
+                    if humanoid then humanoid.WalkSpeed = value end
+                end
+                
+                if LocalPlayer.Character then updateSpeed(LocalPlayer.Character) end
+                speedConnection = LocalPlayer.CharacterAdded:Connect(updateSpeed)
+            end)
+            if not success then
+                warn("Error setting walkspeed: " .. tostring(err))
+                Fluent:Notify({
+                    Title = "Error",
+                    Content = "Failed to set walk speed: " .. tostring(err),
+                    Duration = 5
+                })
+            end
+        end
+    })
+
+    local jumpConnection
+    Tabs.ModGame:AddSlider("JumpSlider", {
+        Title = "Jump Power",
+        Description = "Điều chỉnh độ cao nhảy",
+        Default = 50,
+        Min = 50,
+        Max = 5000,
+        Rounding = 1,
+        Callback = function(value)
+            local success, err = pcall(function()
+                if jumpConnection then jumpConnection:Disconnect() end
+                
+                local function updateJump(char)
+                    local humanoid = char and char:FindFirstChild("Humanoid")
+                    if humanoid then
+                        humanoid.JumpPower = value
+                        humanoid.UseJumpPower = true
+                    end
+                end
+                
+                if LocalPlayer.Character then updateJump(LocalPlayer.Character) end
+                jumpConnection = LocalPlayer.CharacterAdded:Connect(updateJump)
+            end)
+            if not success then
+                warn("Error setting jump power: " .. tostring(err))
+                Fluent:Notify({
+                    Title = "Error",
+                    Content = "Failed to set jump power: " .. tostring(err),
+                    Duration = 5
+                })
+            end
+        end
+    })
+
+    local infiniteJumpConnection
+    Tabs.ModGame:AddToggle("InfiniteJumpToggle", {
+        Title = "Infinite Jump",
+        Description = "Bật/tắt nhảy vô hạn",
+        Default = false,
+        Callback = function(value)
+            local success, err = pcall(function()
+                if value then
+                    if infiniteJumpConnection then infiniteJumpConnection:Disconnect() end
+                    infiniteJumpConnection = UserInputService.JumpRequest:Connect(function()
+                        local humanoid = GetHumanoid()
+                        if humanoid then
+                            humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                        end
+                    end)
+                else
+                    if infiniteJumpConnection then
+                        infiniteJumpConnection:Disconnect()
+                        infiniteJumpConnection = nil
+                    end
+                end
+                Fluent:Notify({
+                    Title = "Infinite Jump",
+                    Content = value and "Infinite Jump enabled!" or "Infinite Jump disabled!",
+                    Duration = 2
+                })
+            end)
+            if not success then
+                warn("Error toggling infinite jump: " .. tostring(err))
+                Fluent:Notify({
+                    Title = "Error",
+                    Content = "Failed to toggle infinite jump: " .. tostring(err),
+                    Duration = 5
+                })
+            end
+        end
+    })
+
+    local fullBrightConnection
+    local defaultLighting = {}
+    Tabs.ModGame:AddToggle("FullBrightToggle", {
+        Title = "Full Bright",
+        Description = "Bật/tắt chế độ sáng toàn bộ",
+        Default = false,
+        Callback = function(value)
+            local success, err = pcall(function()
+                if value then
+                    if not next(defaultLighting) then
+                        defaultLighting = {
+                            FogEnd = Lighting.FogEnd,
+                            FogStart = Lighting.FogStart,
+                            FogColor = Lighting.FogColor,
+                            Ambient = Lighting.Ambient,
+                            ColorShift_Bottom = Lighting.ColorShift_Bottom,
+                            ColorShift_Top = Lighting.ColorShift_Top
+                        }
+                    end
+
+                    Lighting.FogEnd = 1000000
+                    Lighting.FogStart = 1000000
+                    Lighting.FogColor = Color3.new(1, 1, 1)
+                    Lighting.Ambient = Color3.new(1, 1, 1)
+                    Lighting.ColorShift_Bottom = Color3.new(1, 1, 1)
+                    Lighting.ColorShift_Top = Color3.new(1, 1, 1)
+
+                    if fullBrightConnection then fullBrightConnection:Disconnect() end
+                    fullBrightConnection = RunService.RenderStepped:Connect(function()
+                        if Lighting.FogEnd ~= 1000000 then Lighting.FogEnd = 1000000 end
+                        if Lighting.FogStart ~= 1000000 then Lighting.FogStart = 1000000 end
+                        if Lighting.FogColor ~= Color3.new(1, 1, 1) then Lighting.FogColor = Color3.new(1, 1, 1) end
+                        if Lighting.Ambient ~= Color3.new(1, 1, 1) then Lighting.Ambient = Color3.new(1, 1, 1) end
+                        if Lighting.ColorShift_Bottom ~= Color3.new(1, 1, 1) then Lighting.ColorShift_Bottom = Color3.new(1, 1, 1) end
+                        if Lighting.ColorShift_Top ~= Color3.new(1, 1, 1) then Lighting.ColorShift_Top = Color3.new(1, 1, 1) end
+                    end)
+                else
+                    if fullBrightConnection then
+                        fullBrightConnection:Disconnect()
+                        fullBrightConnection = nil
+                    end
+
+                    if next(defaultLighting) then
+                        Lighting.FogEnd = defaultLighting.FogEnd
+                        Lighting.FogStart = defaultLighting.FogStart
+                        Lighting.FogColor = defaultLighting.FogColor
+                        Lighting.Ambient = defaultLighting.Ambient
+                        Lighting.ColorShift_Bottom = defaultLighting.ColorShift_Bottom
+                        Lighting.ColorShift_Top = defaultLighting.ColorShift_Top
+                    end
+                end
+                Fluent:Notify({
+                    Title = "Full Bright",
+                    Content = value and "Full Bright enabled!" or "Full Bright disabled!",
+                    Duration = 2
+                })
+            end)
+            if not success then
+                warn("Error toggling full bright: " .. tostring(err))
+                Fluent:Notify({
+                    Title = "Error",
+                    Content = "Failed to toggle full bright: " .. tostring(err),
+                    Duration = 5
+                })
+            end
+        end
+    })
+
+    local thirdPersonConnection
+    local defaultCameraMode = LocalPlayer.CameraMode
+    local defaultCameraMaxZoom = LocalPlayer.CameraMaxZoomDistance
+    local defaultCameraMinZoom = LocalPlayer.CameraMinZoomDistance
+    Tabs.ModGame:AddToggle("ThirdPersonToggle", {
+        Title = "Third Person View",
+        Description = "Bật/tắt chế độ xem góc nhìn thứ ba",
+        Default = false,
+        Callback = function(value)
+            local success, err = pcall(function()
+                local humanoid = GetHumanoid()
+                local camera = Workspace.CurrentCamera
+                if humanoid and camera then
+                    if value then
+                        LocalPlayer.CameraMode = Enum.CameraMode.Classic
+                        camera.CameraType = Enum.CameraType.Follow
+                        camera.CameraSubject = humanoid
+                        LocalPlayer.CameraMinZoomDistance = 10
+                        LocalPlayer.CameraMaxZoomDistance = math.max(100, LocalPlayer.CameraMaxZoomDistance)
+                        camera.FieldOfView = 70
+                    else
+                        LocalPlayer.CameraMode = defaultCameraMode
+                        camera.CameraType = Enum.CameraType.Custom
+                        camera.CameraSubject = humanoid
+                        LocalPlayer.CameraMinZoomDistance = defaultCameraMinZoom
+                        LocalPlayer.CameraMaxZoomDistance = defaultCameraMaxZoom
+                        camera.FieldOfView = 70
+                    end
+                    Fluent:Notify({
+                        Title = "Third Person View",
+                        Content = value and "Third Person View enabled!" or "Third Person View disabled!",
+                        Duration = 2
+                    })
+                else
+                    warn("Humanoid or Camera not found")
+                end
+            end)
+            if not success then
+                warn("Error toggling third person view: " .. tostring(err))
+                Fluent:Notify({
+                    Title = "Error",
+                    Content = "Failed to toggle third person view: " .. tostring(err),
+                    Duration = 5
+                })
+            end
+        end
+    })
+
+    Tabs.ModGame:AddSlider("MaxZoomSlider", {
+        Title = "Max Zoom",
+        Description = "Điều chỉnh khoảng cách zoom tối đa",
+        Default = 50,
+        Min = 50,
+        Max = 5000,
+        Rounding = 1,
+        Callback = function(value)
+            local success, err = pcall(function()
+                LocalPlayer.CameraMaxZoomDistance = value
+                Fluent:Notify({
+                    Title = "Max Zoom",
+                    Content = "Max Zoom set to " .. value,
+                    Duration = 2
+                })
+            end)
+            if not success then
+                warn("Error setting max zoom: " .. tostring(err))
+                Fluent:Notify({
+                    Title = "Error",
+                    Content = "Failed to set max zoom: " .. tostring(err),
+                    Duration = 5
+                })
+            end
+        end
+    })
+
+    local antiAFKConnection
+    local function SetupAntiAFK()
+        if antiAFKConnection then antiAFKConnection:Disconnect() end
+        antiAFKConnection = LocalPlayer.Idled:Connect(function()
+            VirtualUser:ClickButton2(Vector2.new())
+            VirtualUser:Button2Down(Vector2.new(0, 0), Workspace.CurrentCamera.CFrame)
+            task.wait(1)
+            VirtualUser:Button2Up(Vector2.new(0, 0), Workspace.CurrentCamera.CFrame)
+        end)
+    end
+
+    -- Khởi tạo Anti-AFK
+    repeat task.wait() until game:IsLoaded()
+    SetupAntiAFK()
+
+    Tabs.ModGame:AddToggle("AntiAFKToggle", {
+        Title = "Anti-AFK",
+        Description = "Bật/tắt chế độ chống AFK",
+        Default = true,
+        Callback = function(value)
+            local success, err = pcall(function()
+                if value then
+                    SetupAntiAFK()
+                else
+                    if antiAFKConnection then
+                        antiAFKConnection:Disconnect()
+                        antiAFKConnection = nil
+                    end
+                end
+                Fluent:Notify({
+                    Title = "Anti-AFK",
+                    Content = value and "Anti-AFK enabled!" or "Anti-AFK disabled!",
+                    Duration = 2
+                })
+            end)
+            if not success then
+                warn("Error toggling anti-AFK: " .. tostring(err))
+                Fluent:Notify({
+                    Title = "Error",
+                    Content = "Failed to toggle anti-AFK: " .. tostring(err),
+                    Duration = 5
+                })
+            end
+        end
+    })
+
+    -- Khởi tạo UI
+    Window:SelectTab(1)
+
+    -- Cleanup khi đóng game
+    game:BindToClose(function()
+        if speedConnection then speedConnection:Disconnect() end
+        if jumpConnection then jumpConnection:Disconnect() end
+        if infiniteJumpConnection then infiniteJumpConnection:Disconnect() end
+        if fullBrightConnection then fullBrightConnection:Disconnect() end
+        if thirdPersonConnection then thirdPersonConnection:Disconnect() end
+        if antiAFKConnection then antiAFKConnection:Disconnect() end
+    end)
+end
